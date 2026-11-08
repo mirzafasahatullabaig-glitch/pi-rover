@@ -64,4 +64,7 @@ def stream():
     return Response(frames(), mimetype="multipart/x-mixed-replace; boundary=f")
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000, threaded=True)
+    try:
+        app.run(host="0.0.0.0", port=8000, threaded=True)
+    finally:
+        cam.stop()  # release the camera so the next launch isn't "device busy"

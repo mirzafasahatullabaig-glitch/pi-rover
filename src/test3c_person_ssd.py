@@ -15,7 +15,6 @@ cam = Picamera2()
 cam.configure(cam.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)}))
 cam.start(); time.sleep(1)
 
-n = 0
 try:
     while True:
         frame = cv2.cvtColor(cam.capture_array(), cv2.COLOR_RGB2BGR)
@@ -32,10 +31,11 @@ try:
                 x1, y1, x2, y2 = (det[0, 0, i, 3:7] * [w, h, w, h]).astype(int)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
         if best:
-            cv2.imwrite(f"ssd_{n}.jpg", frame)
+            cv2.imwrite("ssd_latest.jpg", frame)  # overwrite one file, not unbounded ssd_N.jpg
             print(f"person {best:.2f}")
         else:
             print("no person")
-        n += 1
 except KeyboardInterrupt:
-    cam.stop(); print("done")
+    pass
+finally:
+    cam.stop(); print("done")  # always release the camera, even on crash

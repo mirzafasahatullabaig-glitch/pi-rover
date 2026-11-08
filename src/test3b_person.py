@@ -11,7 +11,6 @@ cam = Picamera2()
 cam.configure(cam.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)}))
 cam.start(); time.sleep(1)
 
-n = 0
 try:
     while True:
         frame = cv2.cvtColor(cam.capture_array(), cv2.COLOR_RGB2BGR)
@@ -25,8 +24,9 @@ try:
             for (x, y, w, h) in rects:
                 cv2.rectangle(frame, (int(x*sx), int(y*sy)),
                               (int((x+w)*sx), int((y+h)*sy)), (0, 255, 0), 2)
-            cv2.imwrite(f"person_{n}.jpg", frame)
-        n += 1
+            cv2.imwrite("person_latest.jpg", frame)  # overwrite one file, not unbounded
         time.sleep(0.1)
 except KeyboardInterrupt:
-    cam.stop(); print("done")
+    pass
+finally:
+    cam.stop(); print("done")  # always release the camera
