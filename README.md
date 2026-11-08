@@ -100,3 +100,14 @@ Stop the web stream: `pkill -f web_person.py`
   shot; SSD at 300x300 needs a visible body. HOG (`test3b`) is much weaker than SSD.
 - **Camera view looks zoomed:** the OV5647 crops the sensor at 640x480; that's the
   mode, not the code. Full-sensor mode is wider but ~half the fps.
+
+## Performance / heat
+
+`web_person.py` runs SSD every `DETECT_EVERY` (=3) frames and reuses boxes between.
+Benchmark on the Pi 4 (`python3 scripts/bench.py`): every-frame = 8 fps @ 355% CPU;
+every-3rd = 16 fps @ 239% CPU. Raise `DETECT_EVERY` for less CPU/heat (laggier box).
+
+Keeping cool: idle ~43C under the stream — no heatsink needed, but a passive heatsink
+is cheap insurance in a closed chassis. The real limiter is **power, not heat**:
+`vcgencmd get_throttled` showed `0x50000` (under-voltage HAS occurred). Use a solid
+5V/3A USB-C supply for the Pi; under-voltage throttles the CPU regardless of temp.
