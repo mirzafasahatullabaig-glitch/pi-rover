@@ -1,0 +1,14 @@
+# model weights (large, re-downloadable via scripts/get_model.sh)
+models/*.caffemodel
+models/*.prototxt
+
+# capture output
+*.jpg
+*.log
+run.log
+web.log
+
+# python
+__pycache__/
+*.pyc
+.venv/
