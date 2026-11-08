@@ -6,8 +6,9 @@ from picamera2 import Picamera2
 from flask import Flask, Response
 
 CONF, PERSON = 0.5, 15
-ROTATE = True   # camera is mounted sideways; rotate frames upright
-HOLD = 8        # keep showing the last detection for N frames to debounce flicker
+ROTATE = True       # camera is mounted sideways; rotate frames upright
+HOLD = 4            # keep last detection for N detect-cycles (debounce flicker)
+DETECT_EVERY = 3    # run SSD every Nth frame; reuse boxes between -> ~3x less CPU
 
 _M = "models" if os.path.exists("models/deploy.prototxt") else "."  # repo layout, else cwd (Pi ~)
 net = cv2.dnn.readNetFromCaffe(f"{_M}/deploy.prototxt", f"{_M}/mobilenet_iter_73000.caffemodel")
@@ -19,24 +20,27 @@ app = Flask(__name__)
 
 def frames():
     last_box, last_conf, age = None, 0.0, HOLD + 1  # memory of the last detection
+    fnum = 0
     while True:
         frame = cv2.cvtColor(cam.capture_array(), cv2.COLOR_RGB2BGR)
         if ROTATE:
             frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
         h, w = frame.shape[:2]
-        blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)),
-                                     0.007843, (300, 300), 127.5)
-        net.setInput(blob); det = net.forward()
-        best = 0.0
-        for i in range(det.shape[2]):
-            c = float(det[0, 0, i, 2])
-            if int(det[0, 0, i, 1]) == PERSON and c > CONF and c > best:
-                best = c
-                last_box = (det[0, 0, i, 3:7] * [w, h, w, h]).astype(int)
-        if best:                       # fresh detection: refresh memory
-            last_conf, age = best, 0
-        else:
-            age += 1                   # no detection this frame: age the memory
+        fnum += 1
+        if fnum % DETECT_EVERY == 0:   # only infer on every Nth frame to spare CPU
+            blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)),
+                                         0.007843, (300, 300), 127.5)
+            net.setInput(blob); det = net.forward()
+            best = 0.0
+            for i in range(det.shape[2]):
+                c = float(det[0, 0, i, 2])
+                if int(det[0, 0, i, 1]) == PERSON and c > CONF and c > best:
+                    best = c
+                    last_box = (det[0, 0, i, 3:7] * [w, h, w, h]).astype(int)
+            if best:                   # fresh detection: refresh memory
+                last_conf, age = best, 0
+            else:
+                age += 1               # no detection this cycle: age the memory
         if last_box is not None and age <= HOLD:
             x1, y1, x2, y2 = last_box
             live = age == 0            # solid green if live, dim + HOLD if remembered
