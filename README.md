@@ -111,3 +111,17 @@ Keeping cool: idle ~43C under the stream — no heatsink needed, but a passive h
 is cheap insurance in a closed chassis. The real limiter is **power, not heat**:
 `vcgencmd get_throttled` showed `0x50000` (under-voltage HAS occurred). Use a solid
 5V/3A USB-C supply for the Pi; under-voltage throttles the CPU regardless of temp.
+
+## WiFi (streaming smoothness)
+
+Disable WiFi power save or the stream and SSH stutter when the radio naps.
+NetworkManager-persistent (survives reboot):
+
+```bash
+sudo nmcli connection modify "<your-ssid>" 802-11-wireless.powersave 2  # 2 = off
+sudo nmcli connection up "<your-ssid>"
+iw dev wlan0 get power_save   # expect: Power save: off
+```
+
+Keep the Pi's IP stable via a **router DHCP reservation**, not a static IP on the Pi
+(a wrong static config locks you out of SSH + stream).
