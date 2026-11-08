@@ -6,7 +6,8 @@ from picamera2 import Picamera2
 from flask import Flask, Response
 
 CONF, PERSON = 0.5, 15
-ROTATE = True  # camera is mounted sideways; rotate frames upright
+ROTATE = True   # camera is mounted sideways; rotate frames upright
+HOLD = 8        # keep showing the last detection for N frames to debounce flicker
 
 _M = "models" if os.path.exists("models/deploy.prototxt") else "."  # repo layout, else cwd (Pi ~)
 net = cv2.dnn.readNetFromCaffe(f"{_M}/deploy.prototxt", f"{_M}/mobilenet_iter_73000.caffemodel")
@@ -17,6 +18,7 @@ cam.start(); time.sleep(1)
 app = Flask(__name__)
 
 def frames():
+    last_box, last_conf, age = None, 0.0, HOLD + 1  # memory of the last detection
     while True:
         frame = cv2.cvtColor(cam.capture_array(), cv2.COLOR_RGB2BGR)
         if ROTATE:
@@ -25,13 +27,24 @@ def frames():
         blob = cv2.dnn.blobFromImage(cv2.resize(frame, (300, 300)),
                                      0.007843, (300, 300), 127.5)
         net.setInput(blob); det = net.forward()
+        best = 0.0
         for i in range(det.shape[2]):
             c = float(det[0, 0, i, 2])
-            if int(det[0, 0, i, 1]) == PERSON and c > CONF:
-                x1, y1, x2, y2 = (det[0, 0, i, 3:7] * [w, h, w, h]).astype(int)
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                cv2.putText(frame, f"person {c:.2f}", (x1, max(y1-6, 12)),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            if int(det[0, 0, i, 1]) == PERSON and c > CONF and c > best:
+                best = c
+                last_box = (det[0, 0, i, 3:7] * [w, h, w, h]).astype(int)
+        if best:                       # fresh detection: refresh memory
+            last_conf, age = best, 0
+        else:
+            age += 1                   # no detection this frame: age the memory
+        if last_box is not None and age <= HOLD:
+            x1, y1, x2, y2 = last_box
+            live = age == 0            # solid green if live, dim + HOLD if remembered
+            col = (0, 255, 0) if live else (0, 160, 0)
+            label = f"person {last_conf:.2f}" if live else "person (hold)"
+            cv2.rectangle(frame, (x1, y1), (x2, y2), col, 2)
+            cv2.putText(frame, label, (x1, max(y1-6, 12)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, col, 2)
         ok, jpg = cv2.imencode(".jpg", frame)
         if ok:
             yield (b"--f\r\nContent-Type: image/jpeg\r\n\r\n" + jpg.tobytes() + b"\r\n")
