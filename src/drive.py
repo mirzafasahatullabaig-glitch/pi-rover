@@ -13,6 +13,11 @@ KEYS = {"w": "forward", "s": "reverse", "a": "left", "d": "right"}
 def send(action):
     try:
         urllib.request.urlopen(BASE + action, timeout=1).read()
+    except urllib.error.HTTPError as e:
+        if e.code == 409:
+            print("  BLOCKED by obstacle")   # forward refused: something within STOP_CM
+        else:
+            print(f"  ! {action} failed: {e}")
     except Exception as e:
         print(f"  ! {action} failed: {e}")
 

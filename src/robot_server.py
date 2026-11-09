@@ -5,15 +5,17 @@
 # run: python3 robot_server.py   -> open http://<pi>:5000
 import os, threading
 os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
-from gpiozero import Motor, Robot
+from gpiozero import Motor, Robot, DistanceSensor
 from flask import Flask, render_template_string
 
 SPEED = 0.4          # power cap (0..1)
 DEADMAN_S = 0.4      # auto-stop if no command within this window (lost-connection safety)
+STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
 
 left  = Motor(forward=23, backward=24, enable=12, pwm=True)
 right = Motor(forward=27, backward=22, enable=13, pwm=True)
 robot = Robot(left=left, right=right)
+sonar = DistanceSensor(echo=6, trigger=5, max_distance=2.0)
 
 app = Flask(__name__)
 _timer = None
@@ -26,6 +28,12 @@ def _arm_deadman():
     _timer = threading.Timer(DEADMAN_S, robot.stop)
     _timer.daemon = True
     _timer.start()
+
+def distance_cm():
+    # Median of 5 reads — raw HC-SR04 on software timing spikes (stuck-high, wild outliers),
+    # a single bad read must not false-trigger or miss the auto-stop.
+    reads = sorted(sonar.distance * 100 for _ in range(5))
+    return reads[2]
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -70,9 +78,16 @@ HTML_PAGE = """
 def index():
     return render_template_string(HTML_PAGE)
 
+@app.route("/distance")
+def distance():
+    return f"{distance_cm():.1f}"
+
 @app.route("/move/<action>")
 def move(action):
     if action == "forward":
+        if distance_cm() < STOP_CM:
+            robot.stop()
+            return "BLOCKED", 409
         robot.forward(SPEED); _arm_deadman()
     elif action == "reverse":
         robot.backward(SPEED); _arm_deadman()
