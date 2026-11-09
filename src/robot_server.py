@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+# robot_server.py — Flask remote control for the 4WD rover.
+# Reuses the known-good gpiozero setup from test1_motors.py (NOT RPi.GPIO, which is dead on kernel 6.18).
+# Serves a web button UI at / and a command API at /move/<action>; the PC WASD client (drive.py) uses the same API.
+# run: python3 robot_server.py   -> open http://<pi>:5000
+import os, threading
+os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
+from gpiozero import Motor, Robot
+from flask import Flask, render_template_string
+
+SPEED = 0.4          # power cap (0..1)
+DEADMAN_S = 0.4      # auto-stop if no command within this window (lost-connection safety)
+
+left  = Motor(forward=23, backward=24, enable=12, pwm=True)
+right = Motor(forward=27, backward=22, enable=13, pwm=True)
+robot = Robot(left=left, right=right)
+
+app = Flask(__name__)
+_timer = None
+
+def _arm_deadman():
+    # Any sustained motion auto-stops after DEADMAN_S unless another command refreshes it.
+    global _timer
+    if _timer:
+        _timer.cancel()
+    _timer = threading.Timer(DEADMAN_S, robot.stop)
+    _timer.daemon = True
+    _timer.start()
+
+HTML_PAGE = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pi 4WD Robot Remote</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { text-align: center; font-family: sans-serif; background: #222; color: #fff; margin-top: 50px; }
+        h1 { color: #4CAF50; }
+        .btn { font-size: 20px; padding: 20px 30px; margin: 10px; cursor: pointer; background: #333; color: white; border: 2px solid #4CAF50; border-radius: 10px; width: 120px; }
+        .btn:active { background: #4CAF50; }
+        .stop { border-color: #f44336; }
+        .stop:active { background: #f44336; }
+        .grid { display: inline-grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>4WD Robot Controller</h1>
+    <p>Speed: 40%</p>
+    <div class="grid">
+        <div></div>
+        <button class="btn" onclick="sendCommand('forward')">FORWARD</button>
+        <div></div>
+        <button class="btn" onclick="sendCommand('left')">LEFT</button>
+        <button class="btn stop" onclick="sendCommand('stop')">STOP</button>
+        <button class="btn" onclick="sendCommand('right')">RIGHT</button>
+        <div></div>
+        <button class="btn" onclick="sendCommand('reverse')">REVERSE</button>
+        <div></div>
+    </div>
+    <script>
+        function sendCommand(cmd) {
+            fetch('/move/' + cmd).then(response => response.text());
+        }
+    </script>
+</body>
+</html>
+"""
+
+@app.route("/")
+def index():
+    return render_template_string(HTML_PAGE)
+
+@app.route("/move/<action>")
+def move(action):
+    if action == "forward":
+        robot.forward(SPEED); _arm_deadman()
+    elif action == "reverse":
+        robot.backward(SPEED); _arm_deadman()
+    elif action == "left":
+        robot.left(SPEED); _arm_deadman()
+    elif action == "right":
+        robot.right(SPEED); _arm_deadman()
+    elif action == "stop":
+        if _timer:
+            _timer.cancel()
+        robot.stop()
+    else:
+        return "unknown action", 400
+    return "OK"
+
+if __name__ == "__main__":
+    try:
+        app.run(host="0.0.0.0", port=5000, debug=False)
+    finally:
+        robot.stop()
