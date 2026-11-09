@@ -8,7 +8,7 @@ os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 from gpiozero import Motor, Robot, DistanceSensor
 from flask import Flask, render_template_string
 
-SPEED = 0.4          # power cap (0..1)
+SPEED = 0.6          # power cap (0..1)
 DEADMAN_S = 0.4      # auto-stop if no command within this window (lost-connection safety)
 STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
 
@@ -53,7 +53,7 @@ HTML_PAGE = """
 </head>
 <body>
     <h1>4WD Robot Controller</h1>
-    <p>Speed: 40%</p>
+    <p>Speed: 60%</p>
     <div class="grid">
         <div></div>
         <button class="btn" onclick="sendCommand('forward')">FORWARD</button>
