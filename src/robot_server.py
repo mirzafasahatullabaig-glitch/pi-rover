@@ -12,8 +12,9 @@ SPEED = 0.6          # power cap (0..1)
 DEADMAN_S = 0.4      # auto-stop if no command within this window (lost-connection safety)
 STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
 
-left  = Motor(forward=23, backward=24, enable=12, pwm=True)
-right = Motor(forward=27, backward=22, enable=13, pwm=True)
+# BTS7960 drivers (EN tied to 3.3V). forward=RPWM, backward=LPWM.
+left  = Motor(forward=16, backward=12, pwm=True)  # pins swapped: left motor was wired reversed
+right = Motor(forward=13, backward=26, pwm=True)
 robot = Robot(left=left, right=right)
 sonar = DistanceSensor(echo=6, trigger=5, max_distance=2.0)
 

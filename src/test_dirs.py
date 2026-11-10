@@ -5,8 +5,9 @@ import os, time
 os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 from gpiozero import Motor
 
-left  = Motor(forward=23, backward=24, enable=12, pwm=True)
-right = Motor(forward=27, backward=22, enable=13, pwm=True)
+# BTS7960 drivers (EN tied to 3.3V). forward=RPWM, backward=LPWM.
+left  = Motor(forward=16, backward=12, pwm=True)  # pins swapped: left motor was wired reversed
+right = Motor(forward=13, backward=26, pwm=True)
 
 phases = [
     ("LEFT  forward",  left,  "forward"),
