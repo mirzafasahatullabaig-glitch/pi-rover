@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # drive.py — WASD remote control from this Windows PC. Talks to robot_server.py on the Pi.
 # run: python3 drive.py [pi_ip]   (or set PI_IP env var; arg wins)
-# Keys: W forward  S reverse  A left  D right  Q quit
-# HOLD a key to keep moving; release to stop. (Relies on OS key-repeat while held.)
+# Keys: W forward  S reverse  A left  D right  +/- speed up/down  Q quit
+# HOLD a move key to keep moving; release to stop. (Relies on OS key-repeat while held.)
 import os, sys, time, urllib.request, urllib.error, msvcrt
 
 PI_IP = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PI_IP", "ROVER_IP_HERE")
@@ -16,11 +16,11 @@ RELEASE_S = 0.30     # no key-repeat for this long => treat key as released, sto
 
 def send(action):
     try:
-        urllib.request.urlopen(BASE + action, timeout=1).read()
+        return urllib.request.urlopen(BASE + action, timeout=1).read().decode()
     except urllib.error.HTTPError as e:
-        print("  BLOCKED by obstacle" if e.code == 409 else f"  ! {action} failed: {e}")
+        return "  BLOCKED by obstacle" if e.code == 409 else f"  ! {action} failed: {e}"
     except Exception as e:
-        print(f"  ! {action} failed: {e}")
+        return f"  ! {action} failed: {e}"
 
 print(f"Driving {PI_IP}  |  hold W/A/S/D to move, release to stop, Q quit")
 action = "stop"
@@ -34,7 +34,11 @@ try:
             ch = msvcrt.getwch().lower()
             if ch == "q":
                 raise KeyboardInterrupt
-            if ch in KEYS:
+            if ch in ("+", "="):          # '=' is unshifted '+'
+                print(send("faster"))
+            elif ch == "-":
+                print(send("slower"))
+            elif ch in KEYS:
                 action = KEYS[ch]
                 last_key = now
         # no repeat seen recently => key released => stop
@@ -42,7 +46,9 @@ try:
             action = "stop"
         # keep the Pi's deadman fed while moving; send stop transitions once
         if action != "stop" and now - last_send >= TICK:
-            send(action); last_send = now
+            r = send(action); last_send = now
+            if r and r != "OK":
+                print(r)
         elif action == "stop" and last_send != 0.0:
             send("stop"); last_send = 0.0
             print("stop")

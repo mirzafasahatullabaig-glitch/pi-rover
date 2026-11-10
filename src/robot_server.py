@@ -8,7 +8,9 @@ os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 from gpiozero import Motor, Robot, DistanceSensor
 from flask import Flask, render_template_string
 
-SPEED = 0.6          # power cap (0..1)
+SPEED = 0.6          # power cap (0..1); adjust live via /move/faster|slower
+SPEED_STEP = 0.2     # +/- per faster/slower
+SPEED_MIN = 0.2      # below this the motors stall (L298N-era floor, still safe for BTS7960)
 DEADMAN_S = 0.4      # auto-stop if no command within this window (lost-connection safety)
 STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
 
@@ -85,6 +87,11 @@ def distance():
 
 @app.route("/move/<action>")
 def move(action):
+    global SPEED
+    if action in ("faster", "slower"):
+        SPEED = round(min(1.0, max(SPEED_MIN,
+                       SPEED + (SPEED_STEP if action == "faster" else -SPEED_STEP))), 2)
+        return f"SPEED {SPEED}"
     if action == "forward":
         if distance_cm() < STOP_CM:
             robot.stop()
