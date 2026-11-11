@@ -102,40 +102,125 @@ def set_auto(on):
 
 HTML_PAGE = """
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Pi 4WD Robot Remote</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pi Rover</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <style>
-        body { text-align: center; font-family: sans-serif; background: #222; color: #fff; margin-top: 50px; }
-        h1 { color: #4CAF50; }
-        .btn { font-size: 20px; padding: 20px 30px; margin: 10px; cursor: pointer; background: #333; color: white; border: 2px solid #4CAF50; border-radius: 10px; width: 120px; }
-        .btn:active { background: #4CAF50; }
-        .stop { border-color: #f44336; }
-        .stop:active { background: #f44336; }
-        .grid { display: inline-grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 20px; }
+        :root{
+            --bg:#0f1115; --surface:#181b22; --surface-2:#20242e; --line:#2b3040;
+            --ink:#eef1f6; --ink-2:#9aa3b2;
+            --go:#3ddc84; --caution:#f5b300; --stop:#ff5a52; --auto:#4aa3ff;
+        }
+        *{box-sizing:border-box}
+        body{margin:0; padding:16px; font-family:system-ui,sans-serif; background:var(--bg); color:var(--ink);
+             -webkit-user-select:none; user-select:none; display:flex; flex-direction:column; align-items:center; gap:14px;}
+        header{display:flex; align-items:center; gap:8px; font-weight:600; font-size:18px;}
+        header .dot{width:10px; height:10px; border-radius:50%; background:var(--go); box-shadow:0 0 8px var(--go);}
+        .card{width:100%; max-width:440px; background:var(--surface); border:1px solid var(--line);
+              border-radius:16px; padding:14px;}
+        #cam{width:100%; border-radius:12px; background:#000; aspect-ratio:3/4; object-fit:contain; display:block;}
+        /* clearance meter: sequential go->caution->stop, labelled, not colour-alone */
+        .meter-row{display:flex; align-items:baseline; justify-content:space-between; margin:12px 0 6px;}
+        .meter-row .val{font-size:26px; font-weight:700; font-variant-numeric:tabular-nums;}
+        .meter-row .val small{font-size:14px; color:var(--ink-2); font-weight:500;}
+        .meter-row .lab{font-size:13px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.06em;}
+        .track{height:10px; border-radius:6px; background:var(--surface-2); overflow:hidden;}
+        .fill{height:100%; width:0; border-radius:6px; transition:width .25s, background .25s;}
+        .meta{display:flex; justify-content:space-between; margin-top:10px; font-size:13px; color:var(--ink-2);}
+        .meta b{color:var(--ink); font-variant-numeric:tabular-nums;}
+        .pad{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+        .btn{appearance:none; font-size:16px; font-weight:600; padding:20px 0; border-radius:12px; cursor:pointer;
+             color:var(--ink); background:var(--surface-2); border:1px solid var(--line); touch-action:none; transition:transform .05s, background .12s;}
+        .btn:active{transform:scale(.96);}
+        .btn.hot{background:var(--go); color:#06130b; border-color:transparent;}
+        .btn.stop{color:var(--stop); border-color:var(--stop);}
+        .btn.stop:active{background:var(--stop); color:#fff;}
+        .btn.ghost{background:transparent;}
+        .btn.auto{border-color:var(--auto); color:var(--auto);}
+        .btn.auto.on{background:var(--auto); color:#04121f;}
+        .sp{display:grid; grid-template-columns:1fr 1fr 1.3fr; gap:10px; margin-top:10px;}
+        .hint{font-size:12px; color:var(--ink-2); text-align:center;}
     </style>
 </head>
 <body>
-    <h1>4WD Robot Controller</h1>
-    <p>Speed: 60%</p>
-    <div class="grid">
-        <div></div>
-        <button class="btn" onclick="sendCommand('forward')">FORWARD</button>
-        <div></div>
-        <button class="btn" onclick="sendCommand('left')">LEFT</button>
-        <button class="btn stop" onclick="sendCommand('stop')">STOP</button>
-        <button class="btn" onclick="sendCommand('right')">RIGHT</button>
-        <div></div>
-        <button class="btn" onclick="sendCommand('reverse')">REVERSE</button>
-        <div></div>
+    <header><span class="dot" id="live"></span> Pi Rover</header>
+
+    <div class="card">
+        <img id="cam" alt="camera feed">
+        <div class="meter-row">
+            <div class="val"><span id="dist">--</span><small> cm</small></div>
+            <div class="lab" id="clab">clearance</div>
+        </div>
+        <div class="track"><div class="fill" id="fill"></div></div>
+        <div class="meta"><span>speed <b id="spd">60</b>%</span><span>mode <b id="mode">manual</b></span></div>
     </div>
-    <p><button class="btn" style="width:auto" onclick="fetch('/auto/on')">AUTO ON</button>
-       <button class="btn stop" style="width:auto" onclick="fetch('/auto/off')">AUTO OFF</button></p>
+
+    <div class="card">
+        <div class="pad">
+            <span></span>
+            <button class="btn" data-m="forward">▲</button>
+            <span></span>
+            <button class="btn" data-m="left">◀</button>
+            <button class="btn stop" data-m="stop">STOP</button>
+            <button class="btn" data-m="right">▶</button>
+            <span></span>
+            <button class="btn" data-m="reverse">▼</button>
+            <span></span>
+        </div>
+        <div class="sp">
+            <button class="btn ghost" data-m="slower">– slow</button>
+            <button class="btn ghost" data-m="faster">fast +</button>
+            <button class="btn auto" id="autoBtn">AUTO</button>
+        </div>
+    </div>
+    <div class="hint">hold a direction to drive · release to stop · keys W A S D / arrows · E = auto</div>
+
     <script>
-        function sendCommand(cmd) {
-            fetch('/move/' + cmd).then(response => response.text());
+        const $ = id => document.getElementById(id);
+        $('cam').src = 'http://' + location.hostname + ':8000/stream';
+        const KEYMAP = {w:'forward',s:'reverse',a:'left',d:'right',
+                        ArrowUp:'forward',ArrowDown:'reverse',ArrowLeft:'left',ArrowRight:'right'};
+        const C = getComputedStyle(document.documentElement);
+        const GO=C.getPropertyValue('--go'), CAUTION=C.getPropertyValue('--caution'), STOP=C.getPropertyValue('--stop');
+        let auto=false, online=true;
+
+        function send(cmd){ return fetch('/move/'+cmd).then(r=>r.text()).then(t=>{
+            if(t.startsWith('SPEED')) $('spd').textContent = Math.round(parseFloat(t.split(' ')[1])*100);
+            mark(true);
+        }).catch(()=>mark(false)); }
+        function mark(ok){ if(ok!==online){ online=ok; $('live').style.background = ok?GO:STOP;
+                           $('live').style.boxShadow = '0 0 8px '+(ok?GO:STOP); } }
+        function setMode(){ $('mode').textContent = auto?'AUTO':'manual'; $('autoBtn').classList.toggle('on',auto); }
+        function cancelAuto(){ if(auto){ auto=false; setMode(); fetch('/auto/off').catch(()=>{}); } }
+
+        document.querySelectorAll('.btn[data-m]').forEach(b=>{
+            const m=b.dataset.m;
+            if(['faster','slower','stop'].includes(m)){ b.onclick=()=>{ cancelAuto(); send(m); }; return; }
+            const start=e=>{ e.preventDefault(); cancelAuto(); b.classList.add('hot'); send(m); };
+            const end  =e=>{ e.preventDefault(); b.classList.remove('hot'); send('stop'); };
+            b.addEventListener('mousedown',start); b.addEventListener('mouseup',end); b.addEventListener('mouseleave',end);
+            b.addEventListener('touchstart',start,{passive:false}); b.addEventListener('touchend',end);
+        });
+        $('autoBtn').onclick=()=>{ auto=!auto; setMode(); fetch('/auto/'+(auto?'on':'off')).catch(()=>mark(false)); };
+
+        const held={};
+        addEventListener('keydown',e=>{ if(e.key==='e'&&!held.e){held.e=1; $('autoBtn').click(); return;}
+            const m=KEYMAP[e.key]; if(m&&!held[e.key]){ held[e.key]=1; cancelAuto(); send(m);} });
+        addEventListener('keyup',e=>{ if(e.key==='e')held.e=0;
+            const m=KEYMAP[e.key]; if(m){ held[e.key]=0; send('stop'); } });
+
+        // clearance meter: 0..120cm -> 0..100% width; colour by status band, label states it too
+        function paint(cm){
+            const pct=Math.max(4,Math.min(100, cm/120*100));
+            const f=$('fill'); f.style.width=pct+'%';
+            let col,lab;
+            if(cm<25){col=STOP;lab='blocked';} else if(cm<70){col=CAUTION;lab='caution';} else {col=GO;lab='clear';}
+            f.style.background=col; $('clab').textContent=lab;
         }
+        setInterval(()=>fetch('/distance').then(r=>r.text()).then(t=>{ $('dist').textContent=t; paint(parseFloat(t)); mark(true); })
+                                          .catch(()=>mark(false)), 400);
+        setMode();
     </script>
 </body>
 </html>
