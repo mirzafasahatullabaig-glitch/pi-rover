@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 # drive.py — WASD remote control from this Windows PC. Talks to robot_server.py on the Pi.
-# run: python3 drive.py [pi_ip]   (or set PI_IP env var; arg wins)
+# run: python3 drive.py [pi_host]   (or set PI_IP env var; arg wins)
+#   Default is the Pi's mDNS name, so you never chase its DHCP-floating IP.
 # Keys: W forward  S reverse  A left  D right  +/- speed up/down  Q quit
 # HOLD a move key to keep moving; release to stop. (Relies on OS key-repeat while held.)
-import os, sys, time, urllib.request, urllib.error, msvcrt
+import os, sys, socket, time, urllib.request, urllib.error, msvcrt
 
-PI_IP = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PI_IP", "ROVER_IP_HERE")
+PI_HOST = sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PI_IP", "raspberrypi.local")
+# Resolve to IPv4: the server binds IPv4 only, but .local often resolves to IPv6 first.
+try:
+    PI_IP = socket.getaddrinfo(PI_HOST, 5000, socket.AF_INET)[0][4][0]
+except socket.gaierror:
+    sys.exit(f"Can't resolve {PI_HOST} — is the Pi on the network? Try passing its IP.")
 BASE = f"http://{PI_IP}:5000/move/"
 
 KEYS = {"w": "forward", "s": "reverse", "a": "left", "d": "right"}
