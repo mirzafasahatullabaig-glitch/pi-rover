@@ -16,7 +16,8 @@ STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
 # Automatic mode (obstacle-avoid roam), distances in cm to match distance_cm():
 AUTO_STOP_CM = 25.0  # closer than this -> stop and scan
 AUTO_SLOW_CM = 70.0  # start slowing from here
-AUTO_PIVOT_S = 0.35  # pivot time per side while scanning
+AUTO_PIVOT_90_S = 0.6  # pivot time for ~90 deg turn (no encoder; timed — tune on your surface)
+AUTO_SCAN_SPEED = 0.6  # pivot power while scanning
 
 # BTS7960 drivers (EN tied to 3.3V). forward=RPWM, backward=LPWM.
 left  = Motor(forward=12, backward=16, pwm=True)  # left wheel = pins 16/12, polarity flipped
@@ -50,13 +51,21 @@ def _auto_loop():
     while _auto:
         d = distance_cm()
         if d <= AUTO_STOP_CM:
-            robot.left(0.6);  time.sleep(AUTO_PIVOT_S); robot.stop(); time.sleep(0.15)
+            robot.stop(); time.sleep(0.1)
+            # Look ~90 deg left, then swing ~180 deg to ~90 deg right, measuring each side.
+            robot.left(AUTO_SCAN_SPEED);  time.sleep(AUTO_PIVOT_90_S); robot.stop(); time.sleep(0.2)
             left_clear = distance_cm()
-            robot.right(0.6); time.sleep(2 * AUTO_PIVOT_S); robot.stop(); time.sleep(0.15)
+            robot.right(AUTO_SCAN_SPEED); time.sleep(2 * AUTO_PIVOT_90_S); robot.stop(); time.sleep(0.2)
             right_clear = distance_cm()
-            if left_clear > right_clear:            # swing back through centre to the left
-                robot.left(0.6); time.sleep(2 * AUTO_PIVOT_S)
-            robot.stop()
+            # Now facing ~90 deg right. Go toward the freer side if it's actually open.
+            if max(left_clear, right_clear) <= AUTO_STOP_CM:
+                # both sides blocked: back up a bit and spin ~180 deg to escape
+                robot.backward(AUTO_SCAN_SPEED); time.sleep(0.4)
+                robot.left(AUTO_SCAN_SPEED); time.sleep(2 * AUTO_PIVOT_90_S)
+            elif left_clear > right_clear:
+                robot.left(AUTO_SCAN_SPEED); time.sleep(2 * AUTO_PIVOT_90_S)  # swing back to the left
+            # else right side is freer and we're already facing it
+            robot.stop(); time.sleep(0.1)
         else:
             # full speed when clear, tapering to 0 at AUTO_STOP_CM
             frac = 1.0 if d >= AUTO_SLOW_CM else (d - AUTO_STOP_CM) / (AUTO_SLOW_CM - AUTO_STOP_CM)
