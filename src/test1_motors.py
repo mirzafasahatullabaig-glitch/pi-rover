@@ -5,8 +5,8 @@ os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 from gpiozero import Motor, Robot
 
 # BTS7960 drivers (EN tied to 3.3V). forward=RPWM, backward=LPWM.
-left  = Motor(forward=16, backward=12, pwm=True)  # pins swapped: left motor was wired reversed
-right = Motor(forward=13, backward=26, pwm=True)
+left  = Motor(forward=12, backward=16, pwm=True)  # left wheel = pins 16/12, polarity flipped
+right = Motor(forward=13, backward=26, pwm=True)  # right wheel = pins 26/13, polarity flipped
 robot = Robot(left=left, right=right)
 
 try:
