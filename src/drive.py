@@ -20,6 +20,8 @@ TICK = 0.15          # how often we (re)send the held command; < server DEADMAN_
 RELEASE_S = 0.30     # no key-repeat for this long => treat key as released, stop
 # shortcut: release is inferred from key-repeat gaps, upgrade to real keyup if we add a GUI/pygame
 
+DIST_URL = f"http://{PI_IP}:5000/distance"
+
 def send(action):
     try:
         return urllib.request.urlopen(BASE + action, timeout=1).read().decode()
@@ -28,10 +30,17 @@ def send(action):
     except Exception as e:
         return f"  ! {action} failed: {e}"
 
+def front():
+    try:
+        return float(urllib.request.urlopen(DIST_URL, timeout=1).read())
+    except Exception:
+        return None
+
 print(f"Driving {PI_IP}  |  hold W/A/S/D to move, release to stop, Q quit")
 action = "stop"
 last_key = 0.0
 last_send = 0.0
+last_dist = 0.0
 try:
     while True:
         now = time.monotonic()
@@ -54,10 +63,15 @@ try:
         if action != "stop" and now - last_send >= TICK:
             r = send(action); last_send = now
             if r and r != "OK":
-                print(r)
+                print("\n" + r)
         elif action == "stop" and last_send != 0.0:
             send("stop"); last_send = 0.0
-            print("stop")
+            print("\nstop")
+        # live front distance, rewriting one status line ~3x/sec
+        if now - last_dist >= 0.33:
+            d = front(); last_dist = now
+            shown = f"{d:5.1f} cm" if d is not None else "  -- cm"
+            print(f"\rfront: {shown}   [{action}]   ", end="", flush=True)
         time.sleep(0.02)
 except KeyboardInterrupt:
     pass
