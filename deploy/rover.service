@@ -1,0 +1,17 @@
+[Unit]
+Description=Pi Rover control server (robot_server.py on :5000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=altaf
+WorkingDirectory=/home/altaf
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+ExecStartPre=-/usr/bin/fuser -k 5000/tcp
+ExecStart=/usr/bin/python3 /home/altaf/robot_server.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
