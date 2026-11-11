@@ -16,7 +16,7 @@ STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
 # Automatic mode (obstacle-avoid roam), distances in cm to match distance_cm():
 AUTO_STOP_CM = 25.0  # closer than this -> stop and scan
 AUTO_SLOW_CM = 70.0  # start slowing from here
-AUTO_PIVOT_90_S = 0.6  # pivot time for ~90 deg turn (no encoder; timed — tune on your surface)
+AUTO_SCAN_S = 5.0     # sweep each side this long, sampling for the clearest heading
 AUTO_SCAN_SPEED = 0.6  # pivot power while scanning
 
 # BTS7960 drivers (EN tied to 3.3V). forward=RPWM, backward=LPWM.
@@ -44,6 +44,11 @@ def distance_cm():
     reads = sorted(sonar.distance * 100 for _ in range(5))
     return reads[2]
 
+def distance_cm_fast():
+    # Single read — for the scan sweep where we sample continuously and want it responsive.
+    # Outliers just lose one candidate heading; not safety-critical like the forward stop.
+    return sonar.distance * 100
+
 def _auto_loop():
     # Roam: drive forward at a speed scaled to clearance; on a close obstacle,
     # stop, pivot-scan both sides, turn toward the more open one. Same logic as explore.py,
@@ -52,19 +57,33 @@ def _auto_loop():
         d = distance_cm()
         if d <= AUTO_STOP_CM:
             robot.stop(); time.sleep(0.1)
-            # Look ~90 deg left, then swing ~180 deg to ~90 deg right, measuring each side.
-            robot.left(AUTO_SCAN_SPEED);  time.sleep(AUTO_PIVOT_90_S); robot.stop(); time.sleep(0.2)
-            left_clear = distance_cm()
-            robot.right(AUTO_SCAN_SPEED); time.sleep(2 * AUTO_PIVOT_90_S); robot.stop(); time.sleep(0.2)
-            right_clear = distance_cm()
-            # Now facing ~90 deg right. Go toward the freer side if it's actually open.
-            if max(left_clear, right_clear) <= AUTO_STOP_CM:
-                # both sides blocked: back up a bit and spin ~180 deg to escape
-                robot.backward(AUTO_SCAN_SPEED); time.sleep(0.4)
-                robot.left(AUTO_SCAN_SPEED); time.sleep(2 * AUTO_PIVOT_90_S)
-            elif left_clear > right_clear:
-                robot.left(AUTO_SCAN_SPEED); time.sleep(2 * AUTO_PIVOT_90_S)  # swing back to the left
-            # else right side is freer and we're already facing it
+            # Sweep 5s left then 5s right, sampling clearance the whole way.
+            # Track the best (clearest) heading as a time-offset from the current pose.
+            best_clear, best_t = d, 0.0
+            # --- sweep left for AUTO_SCAN_S, remembering the clearest point ---
+            t0 = time.monotonic(); robot.left(AUTO_SCAN_SPEED)
+            while time.monotonic() - t0 < AUTO_SCAN_S and _auto:
+                c = distance_cm_fast()
+                if c > best_clear:                     # clearest heading so far, to our left
+                    best_clear, best_t = c, -(time.monotonic() - t0)
+                time.sleep(0.1)
+            robot.stop(); time.sleep(0.15)
+            left_end = time.monotonic() - t0           # ~AUTO_SCAN_S of left turn done
+            # --- sweep right back through centre and 5s past it ---
+            t1 = time.monotonic(); robot.right(AUTO_SCAN_SPEED)
+            while time.monotonic() - t1 < left_end + AUTO_SCAN_S and _auto:
+                c = distance_cm_fast()
+                # right-of-start headings are positive offsets; centre is at t1+left_end
+                off = (time.monotonic() - t1) - left_end
+                if c > best_clear:
+                    best_clear, best_t = c, off
+                time.sleep(0.1)
+            robot.stop(); time.sleep(0.15)
+            # Now we're ~AUTO_SCAN_S to the right of start. Turn to face best_t.
+            # Current heading offset = +AUTO_SCAN_S; rotate left by (AUTO_SCAN_S - best_t).
+            turn_back = AUTO_SCAN_S - best_t
+            if _auto and turn_back > 0:
+                robot.left(AUTO_SCAN_SPEED); time.sleep(turn_back)
             robot.stop(); time.sleep(0.1)
         else:
             # full speed when clear, tapering to 0 at AUTO_STOP_CM
