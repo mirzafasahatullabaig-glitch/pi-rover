@@ -79,11 +79,17 @@ def _auto_loop():
                     best_clear, best_t = c, off
                 time.sleep(0.1)
             robot.stop(); time.sleep(0.15)
-            # Now we're ~AUTO_SCAN_S to the right of start. Turn to face best_t.
-            # Current heading offset = +AUTO_SCAN_S; rotate left by (AUTO_SCAN_S - best_t).
-            turn_back = AUTO_SCAN_S - best_t
-            if _auto and turn_back > 0:
-                robot.left(AUTO_SCAN_SPEED); time.sleep(turn_back)
+            if best_clear <= AUTO_STOP_CM:
+                # nowhere clear in the whole sweep: back up and spin ~half a sweep to escape
+                robot.backward(AUTO_SCAN_SPEED); time.sleep(0.4); robot.stop()
+                if _auto:
+                    robot.left(AUTO_SCAN_SPEED); time.sleep(AUTO_SCAN_S); robot.stop()
+            else:
+                # Now we're ~AUTO_SCAN_S to the right of start. Turn to face best_t.
+                # Current heading offset = +AUTO_SCAN_S; rotate left by (AUTO_SCAN_S - best_t).
+                turn_back = AUTO_SCAN_S - best_t
+                if _auto and turn_back > 0:
+                    robot.left(AUTO_SCAN_SPEED); time.sleep(turn_back)
             robot.stop(); time.sleep(0.1)
         else:
             # full speed when clear, tapering to 0 at AUTO_STOP_CM
