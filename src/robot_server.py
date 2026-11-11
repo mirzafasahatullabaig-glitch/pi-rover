@@ -194,21 +194,27 @@ HTML_PAGE = """
         function setMode(){ $('mode').textContent = auto?'AUTO':'manual'; $('autoBtn').classList.toggle('on',auto); }
         function cancelAuto(){ if(auto){ auto=false; setMode(); fetch('/auto/off').catch(()=>{}); } }
 
+        // Hold-to-drive: resend every 200ms so the server deadman (0.4s) never auto-stops mid-hold.
+        let driveTimer=null, driving=null;
+        function startDrive(m){ cancelAuto(); driving=m; send(m);
+            clearInterval(driveTimer); driveTimer=setInterval(()=>send(m), 200); }
+        function stopDrive(){ clearInterval(driveTimer); driveTimer=null; driving=null; send('stop'); }
+
         document.querySelectorAll('.btn[data-m]').forEach(b=>{
             const m=b.dataset.m;
-            if(['faster','slower','stop'].includes(m)){ b.onclick=()=>{ cancelAuto(); send(m); }; return; }
-            const start=e=>{ e.preventDefault(); cancelAuto(); b.classList.add('hot'); send(m); };
-            const end  =e=>{ e.preventDefault(); b.classList.remove('hot'); send('stop'); };
+            if(['faster','slower','stop'].includes(m)){ b.onclick=()=>{ if(m==='stop')stopDrive(); else {cancelAuto(); send(m);} }; return; }
+            const start=e=>{ e.preventDefault(); b.classList.add('hot'); startDrive(m); };
+            const end  =e=>{ e.preventDefault(); b.classList.remove('hot'); stopDrive(); };
             b.addEventListener('mousedown',start); b.addEventListener('mouseup',end); b.addEventListener('mouseleave',end);
-            b.addEventListener('touchstart',start,{passive:false}); b.addEventListener('touchend',end);
+            b.addEventListener('touchstart',start,{passive:false}); b.addEventListener('touchend',end); b.addEventListener('touchcancel',end);
         });
         $('autoBtn').onclick=()=>{ auto=!auto; setMode(); fetch('/auto/'+(auto?'on':'off')).catch(()=>mark(false)); };
 
         const held={};
         addEventListener('keydown',e=>{ if(e.key==='e'&&!held.e){held.e=1; $('autoBtn').click(); return;}
-            const m=KEYMAP[e.key]; if(m&&!held[e.key]){ held[e.key]=1; cancelAuto(); send(m);} });
+            const m=KEYMAP[e.key]; if(m&&!held[e.key]){ held[e.key]=1; startDrive(m);} });
         addEventListener('keyup',e=>{ if(e.key==='e')held.e=0;
-            const m=KEYMAP[e.key]; if(m){ held[e.key]=0; send('stop'); } });
+            const m=KEYMAP[e.key]; if(m){ held[e.key]=0; stopDrive(); } });
 
         // clearance meter: 0..120cm -> 0..100% width; colour by status band, label states it too
         function paint(cm){
