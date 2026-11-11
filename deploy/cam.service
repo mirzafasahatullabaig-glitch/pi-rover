@@ -1,0 +1,17 @@
+[Unit]
+Description=Pi Rover camera + person detection stream (web_person.py on :8000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=altaf
+WorkingDirectory=/home/altaf
+Environment=GPIOZERO_PIN_FACTORY=lgpio
+ExecStartPre=-/usr/bin/fuser -k 8000/tcp
+ExecStart=/usr/bin/python3 /home/altaf/web_person.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

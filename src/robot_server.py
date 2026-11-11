@@ -3,7 +3,7 @@
 # Reuses the known-good gpiozero setup from test1_motors.py (NOT RPi.GPIO, which is dead on kernel 6.18).
 # Serves a web button UI at / and a command API at /move/<action>; the PC WASD client (drive.py) uses the same API.
 # run: python3 robot_server.py   -> open http://<pi>:5000
-import os, threading
+import os, time, threading
 os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 from gpiozero import Motor, Robot, DistanceSensor
 from flask import Flask, render_template_string
@@ -13,6 +13,10 @@ SPEED_STEP = 0.2     # +/- per faster/slower
 SPEED_MIN = 0.2      # below this the motors stall (L298N-era floor, still safe for BTS7960)
 DEADMAN_S = 0.4      # auto-stop if no command within this window (lost-connection safety)
 STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
+# Automatic mode (obstacle-avoid roam), distances in cm to match distance_cm():
+AUTO_STOP_CM = 25.0  # closer than this -> stop and scan
+AUTO_SLOW_CM = 70.0  # start slowing from here
+AUTO_PIVOT_S = 0.35  # pivot time per side while scanning
 
 # BTS7960 drivers (EN tied to 3.3V). forward=RPWM, backward=LPWM.
 left  = Motor(forward=12, backward=16, pwm=True)  # left wheel = pins 16/12, polarity flipped
@@ -22,6 +26,7 @@ sonar = DistanceSensor(echo=6, trigger=5, max_distance=2.0)
 
 app = Flask(__name__)
 _timer = None
+_auto = False        # automatic-roam mode on/off
 
 def _arm_deadman():
     # Any sustained motion auto-stops after DEADMAN_S unless another command refreshes it.
@@ -37,6 +42,35 @@ def distance_cm():
     # a single bad read must not false-trigger or miss the auto-stop.
     reads = sorted(sonar.distance * 100 for _ in range(5))
     return reads[2]
+
+def _auto_loop():
+    # Roam: drive forward at a speed scaled to clearance; on a close obstacle,
+    # stop, pivot-scan both sides, turn toward the more open one. Same logic as explore.py,
+    # run in-process so it shares the one robot/sonar the server already owns.
+    while _auto:
+        d = distance_cm()
+        if d <= AUTO_STOP_CM:
+            robot.left(0.6);  time.sleep(AUTO_PIVOT_S); robot.stop(); time.sleep(0.15)
+            left_clear = distance_cm()
+            robot.right(0.6); time.sleep(2 * AUTO_PIVOT_S); robot.stop(); time.sleep(0.15)
+            right_clear = distance_cm()
+            if left_clear > right_clear:            # swing back through centre to the left
+                robot.left(0.6); time.sleep(2 * AUTO_PIVOT_S)
+            robot.stop()
+        else:
+            # full speed when clear, tapering to 0 at AUTO_STOP_CM
+            frac = 1.0 if d >= AUTO_SLOW_CM else (d - AUTO_STOP_CM) / (AUTO_SLOW_CM - AUTO_STOP_CM)
+            robot.forward(round(SPEED_MIN + (SPEED - SPEED_MIN) * frac, 2))
+        time.sleep(0.05)
+    robot.stop()
+
+def set_auto(on):
+    global _auto
+    if on and not _auto:
+        _auto = True
+        t = threading.Thread(target=_auto_loop, daemon=True); t.start()
+    elif not on:
+        _auto = False      # loop sees this, stops the robot and exits
 
 HTML_PAGE = """
 <!DOCTYPE html>
@@ -68,6 +102,8 @@ HTML_PAGE = """
         <button class="btn" onclick="sendCommand('reverse')">REVERSE</button>
         <div></div>
     </div>
+    <p><button class="btn" style="width:auto" onclick="fetch('/auto/on')">AUTO ON</button>
+       <button class="btn stop" style="width:auto" onclick="fetch('/auto/off')">AUTO OFF</button></p>
     <script>
         function sendCommand(cmd) {
             fetch('/move/' + cmd).then(response => response.text());
@@ -85,9 +121,18 @@ def index():
 def distance():
     return f"{distance_cm():.1f}"
 
+@app.route("/auto/<state>")
+def auto(state):
+    if state not in ("on", "off"):
+        return "use /auto/on or /auto/off", 400
+    set_auto(state == "on")
+    return f"AUTO {state}"
+
 @app.route("/move/<action>")
 def move(action):
     global SPEED
+    if _auto and action not in ("faster", "slower"):
+        set_auto(False)      # any manual drive command takes back control
     if action in ("faster", "slower"):
         SPEED = round(min(1.0, max(SPEED_MIN,
                        SPEED + (SPEED_STEP if action == "faster" else -SPEED_STEP))), 2)

@@ -2,7 +2,7 @@
 # drive.py — WASD remote control from this Windows PC. Talks to robot_server.py on the Pi.
 # run: python3 drive.py [pi_host]   (or set PI_IP env var; arg wins)
 #   Default is the Pi's mDNS name, so you never chase its DHCP-floating IP.
-# Keys: W forward  S reverse  A left  D right  +/- speed up/down  Q quit
+# Keys: W forward  S reverse  A left  D right  +/- speed  E auto on/off  Q quit
 # HOLD a move key to keep moving; release to stop. (Relies on OS key-repeat while held.)
 import os, sys, socket, time, urllib.request, urllib.error, msvcrt
 
@@ -41,6 +41,7 @@ action = "stop"
 last_key = 0.0
 last_send = 0.0
 last_dist = 0.0
+auto = False
 try:
     while True:
         now = time.monotonic()
@@ -53,9 +54,17 @@ try:
                 print(send("faster"))
             elif ch == "-":
                 print(send("slower"))
+            elif ch == "e":               # toggle automatic roam
+                auto = not auto
+                try:
+                    urllib.request.urlopen(f"http://{PI_IP}:5000/auto/{'on' if auto else 'off'}", timeout=1).read()
+                except Exception as ex:
+                    print("\n  ! auto toggle failed:", ex); auto = False
+                print(f"\nAUTO {'ON' if auto else 'OFF'}")
             elif ch in KEYS:
                 action = KEYS[ch]
                 last_key = now
+                auto = False              # a drive key hands control back (server also cancels auto)
         # no repeat seen recently => key released => stop
         if action != "stop" and now - last_key > RELEASE_S:
             action = "stop"
@@ -71,7 +80,8 @@ try:
         if now - last_dist >= 0.33:
             d = front(); last_dist = now
             shown = f"{d:5.1f} cm" if d is not None else "  -- cm"
-            print(f"\rfront: {shown}   [{action}]   ", end="", flush=True)
+            mode = "AUTO" if auto else action
+            print(f"\rfront: {shown}   [{mode}]   ", end="", flush=True)
         time.sleep(0.02)
 except KeyboardInterrupt:
     pass
