@@ -3,10 +3,30 @@
 # Reuses the known-good gpiozero setup from test1_motors.py (NOT RPi.GPIO, which is dead on kernel 6.18).
 # Serves a web button UI at / and a command API at /move/<action>; the PC WASD client (drive.py) uses the same API.
 # run: python3 robot_server.py   -> open http://<pi>:5000
-import os, time, threading
+import os, time, threading, json
 os.environ.setdefault("GPIOZERO_PIN_FACTORY", "lgpio")
 from gpiozero import Motor, Robot, DistanceSensor
 from flask import Flask, render_template_string
+
+HISTORY_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history.jsonl")
+HISTORY_MAX_BYTES = 500 * 1024 * 1024   # roll over at 500MB so the file can't grow forever
+_last_logged = None   # dedupe: hold-to-drive resends the same action every 200ms
+
+def log_event(action):
+    # Append one line per *changed* drive command / auto toggle. Skips the 200ms
+    # hold resends so the file is a readable trail, not thousands of dupes.
+    global _last_logged
+    if action == _last_logged:
+        return
+    _last_logged = action
+    try:
+        if os.path.exists(HISTORY_FILE) and os.path.getsize(HISTORY_FILE) >= HISTORY_MAX_BYTES:
+            os.replace(HISTORY_FILE, HISTORY_FILE + ".1")   # keep one old copy, start fresh
+        with open(HISTORY_FILE, "a") as f:
+            f.write(json.dumps({"t": round(time.time(), 1), "a": action,
+                                "cm": round(distance_cm(), 1)}) + "\n")
+    except OSError:
+        pass   # logging must never break driving
 
 SPEED = 0.6          # power cap (0..1); adjust live via /move/faster|slower
 SPEED_STEP = 0.2     # +/- per faster/slower
@@ -251,7 +271,19 @@ def auto(state):
     if state not in ("on", "off"):
         return "use /auto/on or /auto/off", 400
     set_auto(state == "on")
+    log_event(f"auto_{state}")
     return f"AUTO {state}"
+
+@app.route("/history")
+def history():
+    # Last 100 events, newest last. JSON array for easy reading on phone/PC.
+    try:
+        with open(HISTORY_FILE) as f:
+            lines = f.readlines()[-100:]
+        return app.response_class("[" + ",".join(l.strip() for l in lines) + "]",
+                                  mimetype="application/json")
+    except OSError:
+        return app.response_class("[]", mimetype="application/json")
 
 @app.route("/move/<action>")
 def move(action):
@@ -279,6 +311,7 @@ def move(action):
         robot.stop()
     else:
         return "unknown action", 400
+    log_event(action)
     return "OK"
 
 if __name__ == "__main__":
