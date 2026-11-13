@@ -16,7 +16,7 @@ STOP_CM = 20.0       # refuse forward if an obstacle is closer than this
 # Automatic mode (obstacle-avoid roam), distances in cm to match distance_cm():
 AUTO_STOP_CM = 25.0  # closer than this -> stop and scan
 AUTO_SLOW_CM = 70.0  # start slowing from here
-AUTO_SCAN_S = 5.0     # sweep each side this long, sampling for the clearest heading
+AUTO_SCAN_S = 2.0     # sweep each side this long, sampling for the clearest heading
 AUTO_SCAN_SPEED = 0.6  # pivot power while scanning
 
 # BTS7960 drivers (EN tied to 3.3V). forward=RPWM, backward=LPWM.
